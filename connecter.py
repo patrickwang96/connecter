@@ -5,15 +5,53 @@ import socket
 import getopt
 import threading
 import subprocess
+from Crypto.Cipher import AES
+from Crypto.Hash import SHA256
+import json
 
 # declare and initialize global vars
 listen = False
 command = False
 upload = False
+secured = False
 execute = ""
 target = ""
 upload_destination = ""
 port = 0
+
+# crypto part variable
+# key for server
+# default password for server side is '123'
+hashed_password = SHA256.new('123').digest()
+iv = 'Thisisa16byteslo'
+pading = 'p' # padding is for padding the string when string length doesnot match with 16x
+
+
+def test_password(plaintext_key):
+    return SHA256.new(plaintext_key).hexdigest() == hashed_password
+
+
+def get_key(plaintext_key):
+    return SHA256.new(plaintext_key).digest()
+
+
+def encrypt(plaintext_key, msg):
+    key = get_key(plaintext_key)
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    length = len(msg)
+    while len(msg)%16!=0:
+        msg += pading
+    return (cipher.encrypt(msg),length)
+
+
+def decrypt(ciphertext,length):
+    cipher = AES.new(hashed_password, AES.MODE_CBC, iv)
+    plaintext = cipher.decrypt(ciphertext)
+    return plaintext[0:length]
+
+# above is the pycrypto part
+# ================
+
 
 
 def usage():
@@ -121,14 +159,16 @@ def main():
     global command
     global upload_destination
     global target
+    global hashed_password
+    global secured
 
     if not len(sys.argv[1:]):  # if there is more than one element in the array
         usage()
 
     # read the commandline options
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hle:t:p:cu",
-                                   ["help", "listen", "execute", "target", "port", "command", "upload"])
+        opts, args = getopt.getopt(sys.argv[1:], "hle:t:p:cus:",
+                                   ["help", "listen", "execute=", "target=", "port=", "command", "upload","secure="])
     except getopt.GetoptError as err:
         print str(err)
         usage()
@@ -148,6 +188,9 @@ def main():
             target = a
         elif o in ("-p", "--port"):
             port = int(a)
+        elif o in ("-s", "--secure"):
+            hashed_password = SHA256.new(str(a)).digest()
+            secured = True
         else:
             assert False, "Unhandled Option"
 
