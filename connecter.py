@@ -61,10 +61,10 @@ def decrypt(d):
 # ================
 
 
-
 def usage():
-    print "BHP Net Tool"
-    print "Please choose whether listener mode or client mode."
+    print "Connecter.py"
+    print "Please input the flag conrrectly."
+    print "If you have any doubt, please infer to https://github.com/patrickwang96/connecter "
     sys.exit(0)
 
 
