@@ -24,11 +24,12 @@ port = 0
 # default password for server side is '123'
 hashed_password = SHA256.new('123').digest()
 iv = 'Thisisa16byteslo'
-pading = 'p' # padding is for padding the string when string length doesnot match with 16x
-
+pading = "p" # padding is for padding the string when string length doesnot match with 16x
+plaintext_key = ""
 
 def test_password(plaintext_key):
-    return SHA256.new(plaintext_key).hexdigest() == hashed_password
+    print "comparing session key"
+    return SHA256.new(plaintext_key).digest() == hashed_password
 
 
 def get_key(plaintext_key):
@@ -41,10 +42,17 @@ def encrypt(plaintext_key, msg):
     length = len(msg)
     while len(msg)%16!=0:
         msg += pading
-    return (cipher.encrypt(msg),length)
+    data = {
+        'cipher': cipher.encrypt(msg).encode('base64'),
+        'length': length
+    }
+    return json.dumps(data)
 
 
-def decrypt(ciphertext,length):
+def decrypt(d):
+    data = json.loads(d)
+    ciphertext = data['cipher'].decode('base64')
+    length = data['length']
     cipher = AES.new(hashed_password, AES.MODE_CBC, iv)
     plaintext = cipher.decrypt(ciphertext)
     return plaintext[0:length]
@@ -66,9 +74,7 @@ def client_loop():
     try:
         # connect to our target host
         client.connect((target, port))
-
         while True:
-            # now wait for data back
             recv_len = 1
             response = ""
 
@@ -81,12 +87,18 @@ def client_loop():
                     break
             print response,
 
-            # wait for more input
             buffer = raw_input("")
-            buffer += "\n"
-            #print "sent packet"
-            # send it off
-            client.send(buffer)
+
+            ciphertext = encrypt(plaintext_key,buffer)
+            packet = {
+                'key': plaintext_key,
+                'text': ciphertext
+            }
+            # getting json string
+            send = json.dumps(packet)
+            send += '\n'
+
+            client.send(send)
 
     except:
         print "[*] Exception! Exiting."
@@ -130,25 +142,27 @@ def run_command(command):
 
 
 def client_handler(client_socket):
-    global upload
-    global execute
-    global command
 
-    if command:
-        while True:
-            # show a simple prompt
-            client_socket.send("Remote server>")
+    while True:
+        client_socket.send("Remote>")
 
-            # now we revieve until we see a linefeed (enter key)
-            cmd_buffer = ""
-            while "\n" not in cmd_buffer:
-                cmd_buffer += client_socket.recv(1024)
+        cmd_buffer = ""
+        while "\n" not in cmd_buffer:
+            cmd_buffer += client_socket.recv(1024)
 
-            # we have a valid command so execute it and send back the results
-            response = run_command(cmd_buffer)
+        packet = json.loads(cmd_buffer)
+        recv_key = packet['key']
+        ciphertext = packet['text']
+        if(test_password(recv_key) == True):
+            cmd = decrypt(ciphertext)
 
-            # send the response back to the client
-            client_socket.send(response)
+            response = run_command(cmd)
+
+        else:
+            response = 'Wrong key!'
+
+        # send the response back to the client
+        client_socket.send(response)
 
 
 def main():
@@ -161,14 +175,15 @@ def main():
     global target
     global hashed_password
     global secured
+    global plaintext_key
 
     if not len(sys.argv[1:]):  # if there is more than one element in the array
         usage()
 
     # read the commandline options
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hle:t:p:cus:",
-                                   ["help", "listen", "execute=", "target=", "port=", "command", "upload","secure="])
+        opts, args = getopt.getopt(sys.argv[1:], "hle:t:p:cus:k:",
+                                   ["help", "listen", "execute=", "target=", "port=", "command", "upload","secure=","key="])
     except getopt.GetoptError as err:
         print str(err)
         usage()
@@ -191,6 +206,8 @@ def main():
         elif o in ("-s", "--secure"):
             hashed_password = SHA256.new(str(a)).digest()
             secured = True
+        elif o in ("-k", "--key"):
+            plaintext_key = a
         else:
             assert False, "Unhandled Option"
 
